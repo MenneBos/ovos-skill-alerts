@@ -116,11 +116,12 @@ def test_alarm_words_make_an_alarm(utterance):
     assert _alert(utterance).alert_type == AlertType.ALARM
 
 
-# the verb and the kind word ("zet", "kookwekker") must not end up in the name
+# the verb must not end up in the name; "kookwekker" and "eiertimer" are the name
 @pytest.mark.parametrize("utterance,name", [
     ("zet een timer voor 10 minuten voor de pasta", "pasta"),
-    ("zet kookwekker op 1 minuut", "één minuut timer"),
-    ("zet een eierwekker van 10 minuten", "tien minuten timer"),
+    ("zet kookwekker op 1 minuut", "kookwekker"),
+    ("zet een eiertimer op 1 minuut", "eiertimer"),
+    ("zet een eierwekker van 10 minuten", "eierwekker"),
 ])
 def test_alert_name_has_no_verb_or_kind_word(utterance, name):
     assert _alert(utterance).alert_name == name
@@ -134,3 +135,16 @@ def test_alert_name_has_no_verb_or_kind_word(utterance, name):
 def test_alarm_name_is_the_default_name(utterance):
     # no leftover verb or pronoun: the default name is "<time> wekker"
     assert _alert(utterance).alert_name.endswith("wekker")
+
+
+# two timers must be told apart by name: "stop de eiertimer" names the egg timer
+@pytest.mark.parametrize("utterance,name", [
+    ("stop de eiertimer", "eiertimer"),
+    ("annuleer de kookwekker", "kookwekker"),
+    ("zet de eiertimer uit", "eiertimer"),
+    ("stop de timer", ""),
+])
+def test_cancel_request_names_the_timer(utterance, name):
+    from ovos_skill_alerts.util.parse_utils import parse_alert_name_from_message
+    message = Message("intent", {"utterance": utterance, "lang": "nl-NL"}, {"lang": "nl-NL"})
+    assert parse_alert_name_from_message(message) == name
