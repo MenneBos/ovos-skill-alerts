@@ -114,3 +114,23 @@ def test_timer_words_make_a_timer(utterance):
 ])
 def test_alarm_words_make_an_alarm(utterance):
     assert _alert(utterance).alert_type == AlertType.ALARM
+
+
+# the verb and the kind word ("zet", "kookwekker") must not end up in the name
+@pytest.mark.parametrize("utterance,name", [
+    ("zet een timer voor 10 minuten voor de pasta", "pasta"),
+    ("zet kookwekker op 1 minuut", "één minuut timer"),
+    ("zet een eierwekker van 10 minuten", "tien minuten timer"),
+])
+def test_alert_name_has_no_verb_or_kind_word(utterance, name):
+    assert _alert(utterance).alert_name == name
+
+
+@pytest.mark.parametrize("utterance", [
+    "wek me om 7 uur",
+    "maak me wakker om 6 uur",
+    "kun je een wekker zetten voor 8 uur",
+])
+def test_alarm_name_is_the_default_name(utterance):
+    # no leftover verb or pronoun: the default name is "<time> wekker"
+    assert _alert(utterance).alert_name.endswith("wekker")
