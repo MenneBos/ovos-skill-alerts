@@ -87,6 +87,16 @@ from ovos_workshop.skills.converse import ConversationalSkill
 from ovos_workshop.skills.ovos import join_word_list
 
 
+def _ambiguity_was_announced(skill) -> bool:
+    """True once (and resets) when _pick_one_by_name already spoke the candidates"""
+    announced = getattr(skill, "_ambiguity_announced", False)
+    try:
+        skill._ambiguity_announced = False
+    except AttributeError:
+        pass
+    return announced
+
+
 class AlertSkill(ConversationalSkill):
     def __init__(self, *args, **kwargs):
         # kwarg only used for unittests
@@ -429,6 +439,8 @@ class AlertSkill(ConversationalSkill):
         alert = self._resolve_requested_alert(message, alert_type)
 
         if alert is None:
+            if _ambiguity_was_announced(self):
+                return
             return self.speak_dialog("error_no_scheduled_kind",
                                      {"kind": spoken_type}, wait=True)
 
@@ -504,6 +516,8 @@ class AlertSkill(ConversationalSkill):
         alert: Alert = self._resolve_requested_alert(message, alert_type)
 
         if alert is None:
+            if _ambiguity_was_announced(self):
+                return
             return self.speak_dialog("error_no_scheduled_kind",
                                      {"kind": spoken_type}, wait=True)
 
@@ -577,6 +591,8 @@ class AlertSkill(ConversationalSkill):
                                                      alerts=ringing)
 
         if alert is None:
+            if _ambiguity_was_announced(self):
+                return
             return self.speak_dialog("error_no_scheduled_kind",
                                      {"kind": spoken_type}, wait=True)
 
@@ -811,7 +827,8 @@ class AlertSkill(ConversationalSkill):
             alert = self._resolve_requested_alert(message, alert_type)
 
             if alert is None:
-                self.speak_dialog("error_nothing_to_cancel", wait=True)
+                if not _ambiguity_was_announced(self):
+                    self.speak_dialog("error_nothing_to_cancel", wait=True)
                 return
 
         # if default name, replace alert_type substring
@@ -1441,6 +1458,14 @@ class AlertSkill(ConversationalSkill):
             return None
         elif len(alerts) > 1:
             spoken_list = [alert.alert_name for alert in alerts]
+            if not self.settings.get("ask_followup", False):
+                # no second spoken answer: name the candidates and stop, the
+                # user repeats the request with one of the names
+                self._ambiguity_announced = True
+                self.speak_dialog(dialog or "pick_multiple_entries", wait=True)
+                self.speak(join_word_list(spoken_list, connector="and",
+                                          sep=",", lang=self.lang), wait=True)
+                return None
             self.speak_dialog(dialog, wait=True)
             choice = self.ask_selection(spoken_list, numeric=True)
             # retry with numbers

@@ -148,3 +148,32 @@ def test_cancel_request_names_the_timer(utterance, name):
     from ovos_skill_alerts.util.parse_utils import parse_alert_name_from_message
     message = Message("intent", {"utterance": utterance, "lang": "nl-NL"}, {"lang": "nl-NL"})
     assert parse_alert_name_from_message(message) == name
+
+
+@pytest.mark.parametrize("utterance", [
+    "welke timers lopen er nog",
+    "welke wekkers lopen er nog",
+    "welke alarmen lopen nog",
+    "hoeveel timers heb ik",
+    "wat loopt er nog",
+    "wat staat er nog aan",
+])
+def test_running_alerts_sentence_reaches_list_alerts(container, utterance):
+    assert container.calc_intent(utterance).get("name") == "list_alerts"
+
+
+def test_several_matches_are_named_instead_of_asked():
+    """Without follow-up questions the skill names the candidates and stops."""
+    from types import SimpleNamespace
+    from ovos_skill_alerts import AlertSkill
+    spoken = []
+    skill = SimpleNamespace(
+        settings={"ask_followup": False}, lang="nl-NL",
+        speak_dialog=lambda dialog, *a, **kw: spoken.append(dialog),
+        speak=lambda text, **kw: spoken.append(text),
+        ask_selection=lambda *a, **kw: pytest.fail("asked a follow-up question"))
+    alerts = [SimpleNamespace(alert_name="eiertimer"), SimpleNamespace(alert_name="kookwekker")]
+    assert AlertSkill._pick_one_by_name(skill, alerts, "pick_multiple_entries") is None
+    assert skill._ambiguity_announced is True
+    assert spoken[0] == "pick_multiple_entries"
+    assert "eiertimer" in spoken[1] and "kookwekker" in spoken[1]

@@ -20,7 +20,11 @@ DEFAULT_SETTINGS = {
     "priority_cutoff": 8,
     "services": "",
     "frequency": 15,
-    "sync_ask": False
+    "sync_ask": False,
+    # ask "which one?" and wait for a second spoken answer. Many voice
+    # setups cannot take a follow-up answer; then the skill names the
+    # candidates and ends, and the user repeats the request with a name.
+    "ask_followup": False
 }
 
 
