@@ -24,7 +24,10 @@ DEFAULT_SETTINGS = {
     # ask "which one?" and wait for a second spoken answer. Many voice
     # setups cannot take a follow-up answer; then the skill names the
     # candidates and ends, and the user repeats the request with a name.
-    "ask_followup": False
+    "ask_followup": False,
+    # "which timers are running" also reads the alarms, and the other way
+    # round: asking for either kind lists both
+    "list_alarms_and_timers_together": True
 }
 
 

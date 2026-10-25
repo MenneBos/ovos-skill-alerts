@@ -26,6 +26,10 @@ skillMetadata:
           type: checkbox
           label: Ask a follow-up question when several alerts match (needs a voice setup that takes a second answer)
           value: false
+        - name: list_alarms_and_timers_together
+          type: checkbox
+          label: Asking for the timers or the alarms lists both
+          value: true
         - name: snooze_mins
           type: number
           label: Default snooze duration in minutes

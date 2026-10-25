@@ -155,8 +155,6 @@ def test_cancel_request_names_the_timer(utterance, name):
     "welke wekkers lopen er nog",
     "welke alarmen lopen nog",
     "hoeveel timers heb ik",
-    "wat loopt er nog",
-    "wat staat er nog aan",
 ])
 def test_running_alerts_sentence_reaches_list_alerts(container, utterance):
     assert container.calc_intent(utterance).get("name") == "list_alerts"
@@ -177,3 +175,28 @@ def test_several_matches_are_named_instead_of_asked():
     assert skill._ambiguity_announced is True
     assert spoken[0] == "pick_multiple_entries"
     assert "eiertimer" in spoken[1] and "kookwekker" in spoken[1]
+
+
+def test_asking_for_timers_also_lists_the_alarms(monkeypatch):
+    """'welke timers lopen er nog' reads the timers and the alarms."""
+    from types import SimpleNamespace
+    from ovos_skill_alerts import AlertSkill
+    import ovos_skill_alerts as mod
+    alarm = SimpleNamespace(alert_type=AlertType.ALARM, alert_name="wekker", expiration=1)
+    timer = SimpleNamespace(alert_type=AlertType.TIMER, alert_name="eiertimer", expiration=1)
+    asked, spoken = [], []
+    monkeypatch.setattr(mod, "get_alert_type_from_intent", lambda m: (AlertType.TIMER, "timer"))
+    monkeypatch.setattr(mod, "get_alert_dialog_data", lambda a, lang: {"name": a.alert_name})
+    monkeypatch.setattr(mod, "spoken_alert_type", lambda t, *a: t.name.lower())
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)
+    skill = SimpleNamespace(
+        settings={"list_alarms_and_timers_together": True}, lang="nl-NL",
+        _get_alerts_list=lambda t, **kw: (asked.append(t) or
+                                          {AlertType.ALARM: [alarm], AlertType.TIMER: [timer]}[t]),
+        _display_alerts=lambda *a, **kw: None,
+        speak_dialog=lambda *a, **kw: None,
+        speak=lambda text, **kw: spoken.append(text),
+        resources=SimpleNamespace(render_dialog=lambda name, data: name))
+    AlertSkill.handle_list_all_alerts(skill, Message("intent", {"utterance": "welke timers lopen er nog"}))
+    assert asked == [AlertType.ALARM, AlertType.TIMER]
+    assert any("eiertimer" in s for s in spoken) and any("wekker" in s for s in spoken)

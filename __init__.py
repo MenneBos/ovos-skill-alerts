@@ -682,16 +682,26 @@ class AlertSkill(ConversationalSkill):
         :param message: Message associated with request
         """
         alert_type, spoken_type = get_alert_type_from_intent(message)
-        alerts_list = self._get_alerts_list(alert_type,
-                                            disposition=AlertState.PENDING)
+        together = alert_type in (AlertType.ALARM, AlertType.TIMER) and \
+            self.settings.get("list_alarms_and_timers_together", True)
+        if together:
+            alerts_list = (
+                    self._get_alerts_list(AlertType.ALARM,
+                                          disposition=AlertState.PENDING) +
+                    self._get_alerts_list(AlertType.TIMER,
+                                          disposition=AlertState.PENDING))
+        else:
+            alerts_list = self._get_alerts_list(alert_type,
+                                                disposition=AlertState.PENDING)
         if not alerts_list:
             self.speak_dialog("list_alert_none_upcoming",
                               {"kind": spoken_type}, wait=True)
             return
 
-        self._display_alerts(alert_type, alerts_list)
+        self._display_alerts(AlertType.ALL if together else alert_type,
+                             alerts_list)
 
-        if message.data.get("alert"):
+        if message.data.get("alert") or together:
             kinds = {(a.alert_type.value, spoken_alert_type(a.alert_type))
                      for a in alerts_list if a.expiration is not None}
         else:
@@ -714,7 +724,7 @@ class AlertSkill(ConversationalSkill):
                     dialog = f"{data['name']} -"
                 if "repeat" in data:
                     dialog = f"{dialog} {self.resources.render_dialog('repeating_every', data)}"
-                if alert_type == AlertType.TIMER:
+                if alert.alert_type == AlertType.TIMER:
                     dialog = f"{dialog} {self.resources.render_dialog('in_time', data)}\n"
                 else:
                     dialog = f"{dialog} {self.resources.render_dialog('at_time', data)}\n"
