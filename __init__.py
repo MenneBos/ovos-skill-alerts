@@ -879,16 +879,27 @@ class AlertSkill(ConversationalSkill):
     def handle_alert_catch_all(self, message: Message):
         """
         Safety net for any utterance that mentions an alarm, timer, alert or
-        wekker but matched no specific intent. It keeps these requests inside
-        this skill instead of letting them reach the persona. A request that
-        sounds like turning something off is handled as a cancel, everything
-        else gets the list of running alerts so the user can ask again.
+        wekker. It keeps these requests inside this skill instead of letting
+        them reach the persona. Its wildcards can outscore a specific intent
+        ("zet een wekker om 20:30" scores lower on create_alarm, as the
+        digits do not match a template word), so it routes on the words
+        said: turning off goes to cancel, setting one goes to create, and
+        everything else gets the list of running alerts.
         :param message: Message associated with request
         """
         utterance = message.data.get("utterance", "")
         if voc_match(utterance, "dismiss", lang=self.lang) or \
-                voc_match(utterance, "cancel", lang=self.lang):
+                voc_match(utterance, "cancel", lang=self.lang) or \
+                voc_match(utterance, "catch_cancel", lang=self.lang):
             return self.handle_cancel_alert(message)
+        if voc_match(utterance, "create", lang=self.lang) or \
+                voc_match(utterance, "wake", lang=self.lang) or \
+                voc_match(utterance, "catch_create", lang=self.lang):
+            alert_type = get_alert_type_from_intent(message)[0]
+            if alert_type == AlertType.TIMER:
+                return self.handle_create_timer(message)
+            if alert_type == AlertType.ALARM:
+                return self.handle_create_alarm(message)
         self._speak_running_alerts()
 
     def _speak_running_alerts(self):

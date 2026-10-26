@@ -234,3 +234,39 @@ def test_no_player_at_all_reports_failure_instead_of_crashing():
     skill = _sound_skill(None)
     with patch("ovos_skill_alerts.play_audio", return_value=None):
         assert AlertSkill._play_sound(skill, str(SOUND), _alert_from_satellite()) is False
+
+
+@pytest.mark.parametrize("utterance, handler", [
+    ("zet een wekker om 20:30", "handle_create_alarm"),
+    ("zet een wekker vandaag om 8:30", "handle_create_alarm"),
+    ("stel een wekker in om half negen vanavond", "handle_create_alarm"),
+    ("zet een eierwekker van 5 minuten", "handle_create_timer"),
+    ("zet een timer van 10 minuten", "handle_create_timer"),
+    ("zet de wekker uit", "handle_cancel_alert"),
+    ("stop de kookwekker", "handle_cancel_alert"),
+    ("hoe zit het met mijn wekkers", "_speak_running_alerts"),
+])
+def test_catch_all_routes_on_the_words_said(utterance, handler):
+    """the catch-all can outscore create_alarm ("om 20:30"), so it must route"""
+    names = ("handle_create_alarm", "handle_create_timer",
+             "handle_cancel_alert", "_speak_running_alerts")
+    skill = SimpleNamespace(lang="nl-NL", **{n: Mock() for n in names})
+    AlertSkill.handle_alert_catch_all(skill, Message(
+        "alert_catch_all.intent", {"utterance": utterance, "lang": "nl-NL"},
+        {"lang": "nl-NL"}))
+    for name in names:
+        assert getattr(skill, name).called == (name == handler), name
+
+
+@pytest.mark.parametrize("utterance, hour, minute", [
+    ("zet een wekker om 20:30", 20, 30),
+    ("zet een wekker vandaag om 20:30", 20, 30),
+    ("zet een wekker om half negen vanavond", 20, 30),
+    ("zet een wekker om 8:30 's avonds", 20, 30),
+    ("zet een wekker om half negen morgenochtend", 8, 30),
+])
+def test_alarm_clock_time(utterance, hour, minute):
+    alert = build_alert_from_intent(Message(
+        "create_alarm", {"utterance": utterance, "lang": "nl-NL"}, {"lang": "nl-NL"}))
+    assert alert.alert_type == AlertType.ALARM
+    assert (alert.expiration.hour, alert.expiration.minute) == (hour, minute)
