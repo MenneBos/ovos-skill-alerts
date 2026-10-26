@@ -1,3 +1,5 @@
+# Uitzetten van een actieve of geplande wekker/timer, ook op naam:
+# "zet de kookwekker uit", "stop de eierwekker", "annuleer de timer voor de pasta".
 (annuleer|annuleren|verwijder|verwijderen|wis|wissen|schrap) {alertkind}
 (annuleer|annuleren|verwijder|verwijderen|wis|wissen|schrap) (de|het) {alertkind}
 (annuleer|annuleren|verwijder|verwijderen|wis|wissen) (al|alle) (mijn|de) {alertkind}
@@ -10,3 +12,13 @@ de wekker voor morgenochtend hoef ik niet meer, schrap hem
 (stop|stoppen) (de|mijn) {alertkind}
 zet (de|mijn) {alertkind} uit
 (annuleer|stop|verwijder) de {alertkind} van {name}
+(zet|schakel) (de|mijn|het) {alertkind} uit
+(zet|schakel) {alertkind} uit
+(stop|beëindig|annuleer|verwijder|wis) (de|mijn|het) {alertkind}
+(stop|beëindig|annuleer|verwijder|wis) {alertkind}
+(zet|schakel) (de|mijn) {alertkind} (genaamd|met de naam) {name} uit
+(stop|annuleer|verwijder|wis) (de|mijn) {alertkind} (genaamd|met de naam|voor) {name}
+(zet|schakel) (de|mijn) {name} (wekker|timer|alarm) uit
+(stop|annuleer|verwijder|wis) (de|mijn) {name} (wekker|timer|alarm)
+(kun|kan|zou) je (de|mijn) {alertkind} (uitzetten|stoppen|annuleren|verwijderen)
+(zet|stop|annuleer|verwijder|wis) (de|mijn) {alertkind} (alsjeblieft|even)

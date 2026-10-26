@@ -1,0 +1,6 @@
+# Vangnet: alles met wekker/timer/alarm/alert komt hier uit zodat het niet bij de persona belandt.
+# Lage zekerheid door de wildcards; specifieke intents winnen.
+(wekker|wekkers|timer|timers|alarm|alarmen|alert|alerts|eierwekker|kookwekker|aftelling)
+{voor} (wekker|wekkers|timer|timers|alarm|alarmen|alert|alerts|eierwekker|kookwekker|aftelling)
+(wekker|wekkers|timer|timers|alarm|alarmen|alert|alerts|eierwekker|kookwekker|aftelling) {na}
+{voor} (wekker|wekkers|timer|timers|alarm|alarmen|alert|alerts|eierwekker|kookwekker|aftelling) {na}

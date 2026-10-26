@@ -46,7 +46,8 @@ from ovos_skill_alerts.util.locale import (
     spoken_alert_type,
     get_words_list,
     spoken_duration,
-    get_alert_type
+    get_alert_type,
+    kw_match
 )
 from ovos_utils.log import LOG
 from ovos_utterance_normalizer import UtteranceNormalizerPlugin
@@ -730,6 +731,13 @@ def parse_alert_name_from_message(message: Message,
         slot_name = message.data.get(slot_key)
         if slot_name and isinstance(slot_name, str) and slot_name.strip():
             return slot_name.strip().lower()
+
+    # A compound kind word such as "kookwekker" or "eierwekker" is both the kind
+    # and the name the user knows the alert by, so "zet de kookwekker uit"
+    # can be matched against the timer that was started as "een kookwekker".
+    named_kind = kw_match(message.data.get("utterance", ""), "named_kind", lang)
+    if named_kind:
+        return named_kind.strip().lower()
 
     tokens = tokens or tokenize_utterance(message)
     tokens.strip_time()

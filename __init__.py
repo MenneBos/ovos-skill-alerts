@@ -44,6 +44,7 @@ from ovos_skill_alerts.util.alert_manager import AlertManager, SYNC_LOCK
 from ovos_skill_alerts.util.config import use_24h_format, get_session_tz, DEFAULT_SETTINGS
 from ovos_skill_alerts.util.locale import (
     translate,
+    kw_match,
     voc_match,
     spoken_duration,
     spoken_alert_type,
@@ -810,8 +811,11 @@ class AlertSkill(ConversationalSkill):
                                                                 end,
                                                                 alert_type)
         else:
-            alerts = self._get_alerts_list(alert_type,
-                                           disposition=AlertState.PENDING)
+            # ringing alerts can be turned off by name as well
+            alerts = (self._get_alerts_list(alert_type,
+                                            disposition=AlertState.ACTIVE) +
+                      self._get_alerts_list(alert_type,
+                                            disposition=AlertState.PENDING))
         # Notify nothing to cancel
         if not alerts:
             if alert_type in (AlertType.ALL, AlertType.UNKNOWN):
@@ -820,6 +824,26 @@ class AlertSkill(ConversationalSkill):
                 self.speak_dialog("error_no_scheduled_kind",
                                   {"kind": spoken_type}, wait=True)
             return
+
+        # A named request ("zet de kookwekker uit") only touches alerts with
+        # that name. Without a match, read out everything that is running so
+        # the user can repeat the request with the right name. Only a name the
+        # user said on purpose counts: the {name} slot or a compound kind word.
+        utterance = message.data.get("utterance", "")
+        requested_name = (message.data.get("name") or
+                          kw_match(utterance, "named_kind", self.lang) or
+                          "").strip().lower()
+        if requested_name and not (message.data.get("stored") or
+                                   message.data.get("next") or
+                                   (begin and end)):
+            matched = [a for a in alerts
+                       if requested_name in a.alert_name.lower()
+                       or fuzzy_match(a.alert_name.lower(),
+                                      requested_name) >= 90]
+            if not matched:
+                self.speak_dialog("error_nothing_to_cancel", wait=True)
+                return self._speak_running_alerts()
+            alerts = matched
 
         # Cancel all alerts of some specified type
         if message.data.get("stored") or (begin and end):
@@ -837,9 +861,11 @@ class AlertSkill(ConversationalSkill):
             alert = self._resolve_requested_alert(message, alert_type)
 
             if alert is None:
-                if not _ambiguity_was_announced(self):
-                    self.speak_dialog("error_nothing_to_cancel", wait=True)
-                return
+                # the candidates were already named by _pick_one_by_name
+                if _ambiguity_was_announced(self):
+                    return
+                self.speak_dialog("error_nothing_to_cancel", wait=True)
+                return self._speak_running_alerts()
 
         # if default name, replace alert_type substring
         name = alert.alert_name.replace(spoken_type, "").strip()
@@ -848,6 +874,55 @@ class AlertSkill(ConversationalSkill):
         self.speak_dialog('confirm_cancel_alert',
                           {'kind': spoken_type,
                            'name': name}, wait=True)
+
+    @intent_handler("alert_catch_all.intent")
+    def handle_alert_catch_all(self, message: Message):
+        """
+        Safety net for any utterance that mentions an alarm, timer, alert or
+        wekker but matched no specific intent. It keeps these requests inside
+        this skill instead of letting them reach the persona. A request that
+        sounds like turning something off is handled as a cancel, everything
+        else gets the list of running alerts so the user can ask again.
+        :param message: Message associated with request
+        """
+        utterance = message.data.get("utterance", "")
+        if voc_match(utterance, "dismiss", lang=self.lang) or \
+                voc_match(utterance, "cancel", lang=self.lang):
+            return self.handle_cancel_alert(message)
+        self._speak_running_alerts()
+
+    def _speak_running_alerts(self):
+        """
+        Speak every running (ringing or pending) alarm, timer and alert with
+        its name, so a follow-up request can address one by name.
+        """
+        running = (self._get_alerts_list(AlertType.ALL,
+                                         disposition=AlertState.ACTIVE) +
+                   self._get_alerts_list(AlertType.ALL,
+                                         disposition=AlertState.PENDING))
+        running = [a for a in running if a.alert_type != AlertType.TODO]
+        if not running:
+            return self.speak_dialog("list_alert_none_upcoming",
+                                     {"kind": translate("alert", self.lang)},
+                                     wait=True)
+        kinds = []
+        for alert in running:
+            kind = spoken_alert_type(alert.alert_type, self.lang)
+            if kind not in kinds:
+                kinds.append(kind)
+        self.speak_dialog("list_alert_intro",
+                          {"kind": join_word_list(kinds, connector="and",
+                                                  sep=",", lang=self.lang)},
+                          wait=True)
+        for alert in running[:10]:
+            data = get_alert_dialog_data(alert, self.lang)
+            kind = spoken_alert_type(alert.alert_type, self.lang)
+            dialog = "in_time" if alert.alert_type == AlertType.TIMER \
+                else "at_time"
+            when = self.resources.render_dialog(dialog, data)
+            # the name is what a follow-up request addresses the alert by
+            self.speak(f"{kind} {data['name']} {when}".replace("  ", " "),
+                       wait=True)
 
     # Todo Lists
     #@killable_intent()
@@ -1909,9 +1984,11 @@ class AlertSkill(ConversationalSkill):
         :param alert: Alert that has expired
         """
         # volume handling
-        self.original_volume = self.bus.wait_for_response(
-            Message("mycroft.volume.get")
-        ) or 100
+        volume_reply = self.bus.wait_for_response(
+            Message("mycroft.volume.get"), timeout=3)
+        # the reply is a Message, only its percent can be restored later
+        self.original_volume = volume_reply.data.get("percent", 100) \
+            if volume_reply else 100
         secs_played = 0
         timeout = self.alert_timeout_seconds
         max_volume = self.play_volume
@@ -1969,13 +2046,63 @@ class AlertSkill(ConversationalSkill):
                     _data["percent"] = volume_step
                 self.bus.emit(Message("mycroft.volume.increase", _data))
             if not to_play == "ocp":
-                play_audio(to_play).wait(60)
+                if not self._play_sound(to_play, alert):
+                    # no sound could be played at all, fall back to speech
+                    # so the alert is not silently lost
+                    self._speak_notify_expired(alert)
+                    break
             # TODO this depends on the length of the audio file
             time.sleep(1)
 
         # reset volume
         if not to_play == "ocp":
             self.bus.emit(Message("mycroft.volume.set", {"percent": self.original_volume}))
+
+    def _play_sound(self, uri: str, alert: Alert) -> bool:
+        """
+        Play an alert sound. The request goes over the bus to the audio
+        service with the routing context of the message that created the
+        alert, so it is played on the device (satellite) the user spoke to.
+        The file contents are sent along, as the audio service usually runs
+        in another container or on the satellite. Without an answer from an
+        audio service the file is played by this process instead.
+        :param uri: path of the sound file
+        :param alert: the expired alert (holds the creating message context)
+        :returns: False if the sound could not be played at all
+        """
+        data = {"uri": uri}
+        # the audio service may run in another container or on a satellite
+        # that cannot read this path, so the sound itself goes along too
+        cache = self.__dict__.setdefault("_sound_hex_cache", {})
+        if uri not in cache:
+            try:
+                with open(uri.replace("file://", ""), "rb") as f:
+                    cache[uri] = f.read().hex()
+            except OSError as e:
+                LOG.warning(f"Could not read {uri} to send it along: {e}")
+                cache[uri] = None
+        if cache[uri]:
+            data["binary_data"] = cache[uri]
+            data["audio_ext"] = os.path.splitext(uri)[1].lstrip(".")
+        context = alert.message_context
+        if context:
+            request = Message("mycroft.audio.play_sound", {}, context)
+            request = request.reply("mycroft.audio.play_sound", data)
+        else:
+            request = Message("mycroft.audio.play_sound", data)
+        if self.bus.wait_for_response(request, "mycroft.audio.play_sound.response",
+                                      timeout=60):
+            return True
+        LOG.warning("No audio service answered the play_sound request, "
+                    "playing locally")
+        process = play_audio(uri)
+        if process is None:
+            LOG.error(f"Could not play {uri}: no sound player available. Set "
+                      f"`play_wav_cmdline` in mycroft.conf, e.g. "
+                      f"\"pw-play %1\" or \"paplay %1\"")
+            return False
+        process.wait(60)
+        return True
 
     def _speak_notify_expired(self, alert: Alert):
 
