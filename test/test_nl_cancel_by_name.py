@@ -95,6 +95,16 @@ def test_compound_kind_word_names_the_timer(utterance, name):
     assert alert.alert_name == name
 
 
+@pytest.mark.parametrize("utterance", [
+    "zet mijn wekker om 7 uur",
+    "Zet Mijn wekker om 7 uur",
+])
+def test_capitalised_noise_word_does_not_name_the_alarm(utterance):
+    alert = build_alert_from_intent(Message(
+        "create_alarm", {"utterance": utterance, "lang": "nl-NL"}, {"lang": "nl-NL"}))
+    assert "mijn" not in alert.alert_name.lower()
+
+
 def _timer(name, minutes):
     return Alert.create(
         expiration=dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=minutes),

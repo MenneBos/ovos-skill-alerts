@@ -743,6 +743,8 @@ def parse_alert_name_from_message(message: Message,
     tokens.strip_time()
 
     noise_words = noise_words or get_words_list("noise_words.voc", lang)
+    # the voc files capitalise some entries ("Mijn"), the chunks are lower case
+    noise_words = {word.lower() for word in noise_words}
     candidate_names = list()
     # First try to parse a name from the remainder tokens
     for chunk in tokens.unmatched():
@@ -752,7 +754,7 @@ def parse_alert_name_from_message(message: Message,
         # token, and after `strip_time()` that period is the whole remainder,
         # so without this the alert is named ".".
         cleaned_chunk = " ".join([word.lower() for word in chunk.split()
-                                  if word not in noise_words
+                                  if word.lower() not in noise_words
                                   and any(c.isalnum() for c in word)])
         if cleaned_chunk:
             candidate_names.append(cleaned_chunk)
