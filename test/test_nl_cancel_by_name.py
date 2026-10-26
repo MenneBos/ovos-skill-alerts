@@ -185,6 +185,32 @@ def test_sound_goes_to_the_creating_satellite_with_the_file_attached():
     assert request.data["audio_ext"] == "wav"
 
 
+def test_server_rings_when_the_satellite_does_not_answer():
+    """ovos-audio ignores sounds of a satellite session, the hub then rings"""
+    skill = _sound_skill(None)
+    skill.bus.wait_for_response.side_effect = [
+        None, Message("mycroft.audio.play_sound.response")]
+    assert AlertSkill._play_sound(skill, str(SOUND), _alert_from_satellite())
+    first, second = [c[0][0] for c in skill.bus.wait_for_response.call_args_list]
+    assert first.context["session"]["session_id"] == "keuken"
+    assert second.context["session"]["session_id"] == "default"
+    assert second.data["binary_data"] == first.data["binary_data"]
+
+
+def test_alert_from_the_server_goes_straight_to_the_default_session():
+    skill = _sound_skill(Message("mycroft.audio.play_sound.response"))
+    assert AlertSkill._play_sound(skill, str(SOUND), _timer("kookwekker", 0))
+    skill.bus.wait_for_response.assert_called_once()
+    request = skill.bus.wait_for_response.call_args[0][0]
+    assert request.context["session"]["session_id"] == "default"
+
+
+def test_wait_is_bounded_by_the_sound_length():
+    skill = _sound_skill(Message("mycroft.audio.play_sound.response"))
+    AlertSkill._play_sound(skill, str(SOUND), _timer("kookwekker", 0))
+    assert skill.bus.wait_for_response.call_args[1]["timeout"] < 30
+
+
 def test_sound_falls_back_to_local_playback():
     skill = _sound_skill(None)
     process = Mock()

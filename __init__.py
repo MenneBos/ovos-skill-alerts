@@ -81,7 +81,7 @@ from ovos_skill_alerts.util.ui_models import build_gui_data
 from ovos_utils import create_daemon, classproperty
 from ovos_utils.log import LOG
 from ovos_utils.process_utils import RuntimeRequirements
-from ovos_utils.sound import play_audio
+from ovos_utils.sound import play_audio, get_sound_duration
 from ovos_utterance_normalizer import UtteranceNormalizerPlugin
 from ovos_workshop.decorators import intent_handler
 from ovos_workshop.skills.converse import ConversationalSkill
@@ -2084,15 +2084,33 @@ class AlertSkill(ConversationalSkill):
         if cache[uri]:
             data["binary_data"] = cache[uri]
             data["audio_ext"] = os.path.splitext(uri)[1].lstrip(".")
+        # the answer comes once the sound has played
+        try:
+            timeout = get_sound_duration(uri.replace("file://", "")) + 5
+        except Exception:
+            timeout = 30
+
+        requests = []
         context = alert.message_context
-        if context:
+        session_id = (context.get("session") or {}).get("session_id", "default")
+        if context and session_id != "default":
+            # created on a satellite: try to ring there first
             request = Message("mycroft.audio.play_sound", {}, context)
-            request = request.reply("mycroft.audio.play_sound", data)
-        else:
-            request = Message("mycroft.audio.play_sound", data)
-        if self.bus.wait_for_response(request, "mycroft.audio.play_sound.response",
-                                      timeout=60):
-            return True
+            requests.append((session_id, request.reply(
+                "mycroft.audio.play_sound", data)))
+        # ovos-audio only plays sounds of the default session, so the server
+        # rings when the satellite does not answer. The session is set here,
+        # or the bus client would copy the satellite's from the call stack.
+        requests.append(("default", Message(
+            "mycroft.audio.play_sound", data,
+            {"session": {"session_id": "default"}})))
+        for sid, request in requests:
+            if self.bus.wait_for_response(
+                    request, "mycroft.audio.play_sound.response",
+                    timeout=timeout):
+                return True
+            LOG.warning(f"No audio service played the alert sound for "
+                        f"session {sid}")
         LOG.warning("No audio service answered the play_sound request, "
                     "playing locally")
         process = play_audio(uri)
